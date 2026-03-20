@@ -1,3 +1,2 @@
-[build]
-  command = "npm run build"   # or whatever your build command is
-  publish = "dist"
+[functions]
+directory = "netlify/functions"
