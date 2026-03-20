@@ -41,9 +41,48 @@ function timeSince(dateStr) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+// ─── ENRICHMENT HELPERS ───────────────────────────────────────────────────────
+async function enrichJobWithGemini(job) {
+  const needsEnrichment = !job.examDate || job.lastDate === "Check notification" || !job.formStart;
+  if (!needsEnrichment) return job;
+  try {
+    const res = await fetch("/.netlify/functions/gemini-search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobTitle: job.title, link: job.link }),
+    });
+    const data = await res.json();
+    if (data.success && data.enriched) {
+      const e = data.enriched;
+      return { ...job, formStart: e.formStart || null, lastDate: e.lastDate || job.lastDate, examDate: e.examDate || null, vacancies: e.vacancies || job.posts, eligibility: e.eligibility || job.eligibility, applyLink: e.applyLink || job.link, confirmed: e.confirmed ?? false, enriched: true };
+    }
+  } catch (err) { console.warn("Enrichment failed:", job.title, err.message); }
+  return job;
+}
+
+async function fetchAndEnrich() {
+  const res  = await fetch("/.netlify/functions/sarkari-proxy");
+  const data = await res.json();
+  if (!data.success || !data.items?.length) throw new Error(data.error || "No notifications found. Try again.");
+  const enriched = await Promise.all(
+    data.items.map((item, i) =>
+      item.fromTelegram
+        ? new Promise(r => setTimeout(r, i * 200)).then(() => enrichJobWithGemini(item))
+        : Promise.resolve(item)
+    )
+  );
+  const today = new Date().toISOString().split("T")[0];
+  return {
+    all:      enriched,
+    upcoming: enriched.filter(item => item.examDate && item.examDate > today),
+    active:   enriched.filter(item => !item.examDate || item.examDate <= today),
+  };
+}
+
 // ─── LIVE NOTIFICATIONS TAB ───────────────────────────────────────────────────
 function LiveNotificationsTab({ saffron }) {
   const [notifications, setNotifications] = useState([]);
+  const [upcoming, setUpcoming] = useState([]);
   const [loading, setLoading] = useState(false);
   const [lastFetched, setLastFetched] = useState(null);
   const [filter, setFilter] = useState("All");
@@ -55,14 +94,9 @@ function LiveNotificationsTab({ saffron }) {
     setLoading(true);
     setError(null);
     try {
-      // ── Calls our Netlify Function (server-side proxy) — no CORS issues ────
-      const res = await fetch("/.netlify/functions/sarkari-proxy");
-      const data = await res.json();
-
-      if (!data.success) throw new Error(data.error || "Failed to fetch from SarkariResult.");
-      if (!data.items?.length) throw new Error("No notifications found. Try again.");
-
-      setNotifications(data.items);
+      const { all, upcoming: upcomingItems } = await fetchAndEnrich();
+      setNotifications(all);
+      setUpcoming(upcomingItems);
       setLastFetched(new Date());
     } catch (e) {
       setError(e.message);
@@ -114,7 +148,25 @@ function LiveNotificationsTab({ saffron }) {
           <span style={{ fontSize: 11, color: "#475569" }}>Showing {filtered.length} / {notifications.length}</span>
         )}
       </div>
-
+      {/* Upcoming Exams */}
+      {upcoming.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#f97316", marginBottom: 8, letterSpacing: 0.5 }}>📅 UPCOMING EXAMS</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {upcoming.map((n, i) => (
+              <div key={i} style={{ background: "#0a1628", border: "1px solid #1e3a5f", borderRadius: 10, padding: "12px 16px", borderLeft: "4px solid #f97316" }}>
+                <div style={{ fontSize: 13, fontWeight: "bold", color: "#f1f5f9", marginBottom: 6 }}>{n.title}</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {n.formStart  && <span style={{ background: "#0d2d1a", border: "1px solid #22c55e33", color: "#86efac", borderRadius: 4, fontSize: 11, padding: "2px 8px" }}>📝 Form opens: {n.formStart}</span>}
+                  {n.lastDate   && <span style={{ background: "#1f0d0d", border: "1px solid #7f1d1d33", color: "#fca5a5", borderRadius: 4, fontSize: 11, padding: "2px 8px" }}>⏳ Last date: {n.lastDate}</span>}
+                  {n.examDate   && <span style={{ background: "#0d1f35", border: "1px solid #1e3a5f", color: "#93c5fd", borderRadius: 4, fontSize: 11, padding: "2px 8px" }}>🗓 Exam: {n.examDate}</span>}
+                  {n.confirmed  && <span style={{ background: "#0a2a1a", border: "1px solid #22c55e44", color: "#4ade80", borderRadius: 4, fontSize: 11, padding: "2px 8px" }}>✅ Confirmed</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {/* Source info */}
       <div style={{ background: "#0a1628", border: "1px solid #1e3a5f", borderRadius: 8, padding: "9px 14px", marginBottom: 16, fontSize: 12, color: "#475569", display: "flex", gap: 8 }}>
         <span>🌐</span>
