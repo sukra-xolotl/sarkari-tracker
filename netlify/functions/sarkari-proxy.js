@@ -6,7 +6,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const handler = async () => {
-  const RSS_URL = "https://www.sarkariresult.com/feed/";
+    const RSS_SOURCES = [
+    "https://www.govtjobsblog.in/feed",
+    "https://indiajoblive.com/feed",
+    "https://sarkarinaukriblog.com/feed",
+    ];
 
   try {
     // Fetch RSS from SarkariResult — works fine server-side
