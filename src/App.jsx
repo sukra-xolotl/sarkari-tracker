@@ -80,7 +80,7 @@ async function fetchAndEnrich() {
 }
 
 // ─── LIVE NOTIFICATIONS TAB ───────────────────────────────────────────────────
-function LiveNotificationsTab({ saffron }) {
+function LiveNotificationsTab({ saffron, savedLinks = [] }) {
   const [notifications, setNotifications] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -115,7 +115,8 @@ function LiveNotificationsTab({ saffron }) {
     return () => clearInterval(intervalRef.current);
   }, [autoRefresh, fetchNotifications]);
 
-  const filtered = filter === "All" ? notifications : notifications.filter(n => n.type === filter);
+  const filtered = (filter === "All" ? notifications : notifications.filter(n => n.type === filter))
+  .filter(n => !savedLinks.includes(n.link));
   const statusColor = { New: "#22c55e", Ongoing: "#60a5fa", "Last Few Days": "#f97316" };
 
   return (
@@ -230,10 +231,20 @@ function LiveNotificationsTab({ saffron }) {
                     {n.lastDate && <span style={{ background: "#1f0d0d", border: "1px solid #7f1d1d33", color: "#fca5a5", borderRadius: 4, fontSize: 12, padding: "3px 9px" }}>⏳ {n.lastDate}</span>}
                   </div>
                 </div>
-                {n.link && (
-                  <a href={n.link} target="_blank" rel="noopener noreferrer"
-                    style={{ background: "#1a56db22", border: "1px solid #1a56db44", color: "#60a5fa", borderRadius: 8, width: 36, height: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, textDecoration: "none" }}>🔗</a>
-                )}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {n.link && (
+                    <a href={n.link} target="_blank" rel="noopener noreferrer"
+                      style={{ background: "#1a56db22", border: "1px solid #1a56db44", color: "#60a5fa", borderRadius: 8, width: 36, height: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, textDecoration: "none" }}>🔗</a>
+                  )}
+                  <button
+                    onClick={() => {
+                      const updated = [...savedNotifs, n];
+                      setSavedNotifs(updated);
+                      localStorage.setItem("saved_notifs", JSON.stringify(updated));
+                    }}
+                    title="Save job"
+                    style={{ background: "#0a2a1a", border: "1px solid #22c55e44", color: "#22c55e", borderRadius: 8, width: 36, height: 36, cursor: "pointer", fontSize: 14 }}>🔖</button>
+                </div>
               </div>
             </div>
           ))}
@@ -250,6 +261,9 @@ function LiveNotificationsTab({ saffron }) {
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function GovtExamTracker() {
   const [bookmarks, setBookmarks] = useState([]);
+  const [savedNotifs, setSavedNotifs] = useState(
+    JSON.parse(localStorage.getItem("saved_notifs") || "[]")
+  );
   const [catFilter, setCatFilter] = useState("All");
   const [diffFilter, setDiffFilter] = useState("All");
   const [search, setSearch] = useState("");
@@ -379,7 +393,12 @@ export default function GovtExamTracker() {
         )}
 
         {/* Live Feed */}
-        {tab === "live" && <LiveNotificationsTab saffron={saffron} />}
+        {tab === "live" && (
+          <LiveNotificationsTab
+            saffron={saffron}
+            savedLinks={savedNotifs.map(n => n.link)}
+          />
+        )}
 
         {/* AI Chat */}
         {tab === "ai" && (
